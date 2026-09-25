@@ -1,0 +1,6 @@
+Subject: Weekly standup notes
+
+- Auth refactor merged; deploy window Friday 16:00
+- Postgres migration tested on staging; prod migration next sprint
+- Ana is oncall this week; escalate pages to her
+- Retro moved to Thursday

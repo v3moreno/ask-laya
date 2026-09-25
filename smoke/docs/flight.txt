@@ -1,0 +1,6 @@
+From: bookings@airline.example
+Subject: Itinerary — Lisbon to Tokyo
+
+Outbound: Tuesday Nov 4, departs LIS 08:35, arrives HND Nov 5 14:20 (1 stop, FRA).
+Return: Friday Nov 14, departs HND 19:10, arrives LIS Nov 15 10:05 (1 stop, CDG).
+Booking ref: XK2-9TQ. Check-in opens 30h before departure.

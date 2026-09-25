@@ -1,0 +1,6 @@
+From: M. Alvarez <malvarez@rentals.example>
+Subject: Rent receipt — October
+
+Hi, confirming receipt of your October rent payment of 1,150 EUR, received on
+the 3rd. The receipt is attached as a PDF. Heating maintenance is scheduled for
+November 12 between 9:00 and 12:00 — you don't need to be home.

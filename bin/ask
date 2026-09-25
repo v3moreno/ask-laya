@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""ask — typed decisions from the local Laya daemon. No generation, ~20-150ms.
+
+  ask route <text>                       task type, needs-web, needs-docs, needs-reasoning
+  ask relevant <question> <file>...      relevance score per document (0-1, keep >= 0.5)
+  ask triage <file>...                   message type per document
+  ask yesno <state> <instruction>        single yes/no score
+  ask predict <state> <questions-json>   raw /v1/systemone call
+
+Daemon discovery: $LAYA_URL, else probe :8124 (gpu) then :8123 (cpu).
+$LAYA_API_KEY is sent as a bearer token when set.
+Answers go to stdout as JSON; diagnostics to stderr.
+"""
+import json, os, sys, urllib.request, urllib.error
+
+URLS = ([os.environ["LAYA_URL"]] if os.environ.get("LAYA_URL")
+        else ["http://127.0.0.1:8124", "http://127.0.0.1:8123"])
+
+ROUTE_Q = {
+    "task": {
+        "type": "choice",
+        "instructions": "What kind of request is this?",
+        "criteria": {
+            "qa": "factual question answered from knowledge or the user's documents",
+            "email": "write, reply to, or classify an email or message",
+            "summarize": "summarize, reformat, or extract from given text",
+            "web_lookup": "needs current information (news, prices, weather, recent events)",
+            "chat": "casual conversation",
+        },
+    },
+    "needs_web": {"type": "noul", "instructions": "Does answering require live information the model cannot know (today's news, current prices, weather)?"},
+    "needs_docs": {"type": "noul", "instructions": "Would the answer benefit from the user's own documents or emails?"},
+    "needs_reasoning": {"type": "noul", "instructions": "Does this require careful multi-step reasoning, math, planning, or weighing options — rather than a direct lookup or short reply?"},
+}
+
+
+def base():
+    for u in URLS:
+        try:
+            urllib.request.urlopen(u + "/health", timeout=0.5)
+            return u
+        except Exception:
+            continue
+    sys.exit("ask: no laya daemon on " + ", ".join(URLS) + " — start one with ~/Projects/local-laya/laya-serve cpu|gpu")
+
+
+def predict(state, questions):
+    req = urllib.request.Request(
+        base() + "/v1/systemone",
+        data=json.dumps({"state": state, "questions": questions}).encode(),
+        headers={"Content-Type": "application/json",
+                 **({"Authorization": "Bearer " + os.environ["LAYA_API_KEY"]}
+                    if os.environ.get("LAYA_API_KEY") else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"ask: daemon returned {e.code}: {e.read().decode()[:200]}")
+
+
+def answers(result):
+    """Slim answers: choice/score/noul value per question."""
+    out = {}
+    for qid, a in result.get("answers", {}).items():
+        for k in ("choice", "score", "noul"):
+            if k in a:
+                out[qid] = a[k]
+                break
+        else:
+            out[qid] = a
+    return out
+
+
+TRIAGE_Q = {
+    "kind": {
+        "type": "choice",
+        "instructions": "What kind of message or document is this?",
+        "criteria": {
+            "invoice_or_billing": "bill, invoice, payment or charge notice",
+            "personal": "personal message from a person",
+            "booking_or_itinerary": "travel, booking, reservation or schedule",
+            "notice": "informational notice, receipt or reminder",
+            "work": "work update, standup or team note",
+            "other": "none of the above",
+        },
+    }
+}
+
+USAGE = """usage: ask <command> ...
+  ask route "text"                        route a user request
+  ask relevant "question" FILE...         relevance per file
+  ask triage FILE...                      message type per file
+  ask yesno "state" "instruction"         yes/no score
+  ask predict "state" '<questions-json>'  raw call"""
+
+
+def need(args, n):
+    if len(args) < n:
+        sys.exit(USAGE)
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "route":
+        need(sys.argv, 3)
+        print(json.dumps(answers(predict(sys.argv[2], ROUTE_Q))))
+    elif cmd == "relevant":
+        need(sys.argv, 4)
+        q = sys.argv[2]
+        out = []
+        for f in sys.argv[3:]:
+            text = sys.stdin.read() if f == "-" else open(f).read()
+            r = predict(text[:4000], {"relevant": {"type": "noul",
+                        "instructions": f"Does this text contain information that helps answer: {q}?"}})
+            out.append({"file": f, "relevant": answers(r)["relevant"]})
+        print(json.dumps(out))
+    elif cmd == "triage":
+        need(sys.argv, 3)
+        out = []
+        for f in sys.argv[2:]:
+            r = predict(open(f).read()[:4000], TRIAGE_Q)
+            out.append({"file": f, "kind": answers(r)["kind"]})
+        print(json.dumps(out))
+    elif cmd == "yesno":
+        need(sys.argv, 4)
+        r = predict(sys.argv[2], {"answer": {"type": "noul", "instructions": sys.argv[3]}})
+        print(json.dumps(answers(r)))
+    elif cmd == "predict":
+        need(sys.argv, 4)
+        print(json.dumps(predict(sys.argv[2], json.loads(sys.argv[3]))))
+    else:
+        sys.exit(USAGE)
+
+
+if __name__ == "__main__":
+    main()

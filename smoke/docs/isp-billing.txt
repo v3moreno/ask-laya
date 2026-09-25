@@ -1,0 +1,11 @@
+From: ISP Billing Team <billing@isp.example>
+Subject: Invoice correction — March #4417
+
+Hello,
+
+We identified a duplicate charge of 49.99 EUR on your March invoice (#4417),
+applied in error when the promotion ended early. A refund has been issued and
+should arrive within 5 business days. Your April invoice will show the normal
+rate of 49.99 EUR.
+
+Sorry for the inconvenience.
