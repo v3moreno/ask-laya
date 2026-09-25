@@ -61,7 +61,8 @@ optional and accept globs — omitted means `docs/*`.
 
 | Setup | Laya used | Correct | Wall (doc tasks) |
 |---|---:|---:|---|
-| 4B + skill (laya CPU) | 4/6 | **6/6** | 9–45 s |
+| 4B + skill (laya CPU) | 4/6 | 6/6 | 9–45 s |
+| **4B + extension v2 (laya CPU)** | 5/6 | **6/6** | 4–19 s |
 | 2B + skill (laya GPU) | ~1/6* | 4/6 | 1–300 s |
 | **2B + extension v2 (laya GPU)** | **6/6** | 4/6 | **2–5 s** |
 | 0.8B + skill | 0/6 | 1/6 | up to 231 s wandering |
@@ -89,6 +90,21 @@ real file — an empty glob no longer unlocks the gate, and `laya_route` /
 
 Skips `ask` on tasks it judges as direct generation or trivial reading —
 soft enforcement, but quality is flawless.
+
+With the extension instead of prompt rules — every doc task ran
+`laya_filter`/`laya_triage` first, then read only the kept file:
+
+| Test | Wall | Tokens in/out | Laya calls | Correct? |
+|---|---:|---:|---:|---|
+| filter docs | 13 s | 3162/185 | filter | yes (isp-billing.txt) |
+| summarize ISP email | 9 s | 924/266 | filter → read isp-billing | yes |
+| draft reply | 12 s | 1133/449 | filter → read isp-billing | yes |
+| flight lookup | 19 s | 1091/417 | filter + triage → read flight.txt | yes (dates + ref) |
+| triage all docs | 6 s | 545/184 | triage | yes |
+| no-doc QA | 4 s | 179/154 | none (correctly skipped) | yes |
+
+Best quality configuration: 6/6 correct with full enforcement, at the cost
+of ~1 s CPU laya decisions and 4B thinking time.
 </details>
 
 <details>
