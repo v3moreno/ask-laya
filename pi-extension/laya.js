@@ -103,7 +103,7 @@ export default function (pi) {
 		label: "Laya Route",
 		description: "MANDATORY first step for any multi-step or document-touching request: classify the request (task type, needs web/docs/reasoning) with the Laya decision engine. ~20ms, no generation.",
 		parameters: { type: "object", required: ["text"], properties: { text: { type: "string", description: "the user's request, verbatim" } } },
-		async execute(_id, params) { layaUsed = true; return text(slim(await predict(params.text, ROUTE_Q))); },
+		async execute(_id, params) { return text(slim(await predict(params.text, ROUTE_Q))); },
 	});
 
 	pi.registerTool({
@@ -118,7 +118,6 @@ export default function (pi) {
 			},
 		},
 		async execute(_id, params) {
-			layaUsed = true;
 			const out = [];
 			for (const f of expand(params.files)) {
 				const body = tryRead(f);
@@ -126,6 +125,7 @@ export default function (pi) {
 				const r = await predict(body, { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${params.question}?` } });
 				out.push({ file: f, relevant: slim(r).relevant });
 			}
+			if (out.some((x) => !x.error)) layaUsed = true;
 			return text(out);
 		},
 	});
@@ -136,13 +136,13 @@ export default function (pi) {
 		description: "MANDATORY when asked to classify or triage documents: returns the message kind of each file (invoice_or_billing, personal, booking_or_itinerary, notice, work, other). Call with files=[] or a glob like docs/*.txt — omit files to triage all docs/*. Never classify documents yourself.",
 		parameters: { type: "object", properties: { files: { type: "array", items: { type: "string" }, description: "paths or glob; omit to triage all docs/*" } } },
 		async execute(_id, params) {
-			layaUsed = true;
 			const out = [];
 			for (const f of expand(params.files)) {
 				const body = tryRead(f);
 				if (body.startsWith("__ERR__")) { out.push({ file: f, error: body.slice(8) }); continue; }
 				out.push({ file: f, kind: slim(await predict(body, TRIAGE_Q)).kind });
 			}
+			if (out.some((x) => !x.error)) layaUsed = true;
 			return text(out);
 		},
 	});
@@ -155,7 +155,7 @@ export default function (pi) {
 			type: "object", required: ["state", "instruction"],
 			properties: { state: { type: "string" }, instruction: { type: "string", description: "the yes/no question as an instruction" } },
 		},
-		async execute(_id, params) { layaUsed = true; return text(slim(await predict(params.state, { answer: { type: "noul", instructions: params.instruction } }))); },
+		async execute(_id, params) { return text(slim(await predict(params.state, { answer: { type: "noul", instructions: params.instruction } }))); },
 	});
 
 	// Small models hallucinate laya_truth — keep it as a working alias of filter.
@@ -165,7 +165,6 @@ export default function (pi) {
 		description: "Score whether each doc helps answer the question. Equivalent to laya_filter; question may be named 'text'.",
 		parameters: { type: "object", properties: { text: { type: "string" }, question: { type: "string" }, files: { type: "array", items: { type: "string" } } } },
 		async execute(_id, params) {
-			layaUsed = true;
 			const q = params.question || params.text || "relevant documents";
 			const out = [];
 			for (const f of expand(params.files)) {
@@ -174,13 +173,14 @@ export default function (pi) {
 				const r = await predict(body, { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${q}?` } });
 				out.push({ file: f, relevant: slim(r).relevant });
 			}
+			if (out.some((x) => !x.error)) layaUsed = true;
 			return text(out);
 		},
 	});
 
-	// Hard enforcement: no reading or shell-printing of docs until a laya tool ran.
+	// Hard enforcement: no reading or shell-printing of docs until a
+	// doc-scoring laya tool has actually scored files.
 	pi.on("tool_call", async (event) => {
-		if (event.toolName.startsWith("laya_")) { layaUsed = true; return undefined; }
 		if (layaUsed) return undefined;
 		const p = event.input || {};
 		const docRead =
