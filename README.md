@@ -57,6 +57,10 @@ working dir (or point the agent's skill mechanism at `SKILL.md`).
 Gate scope is `docs/` — it's a tripwire for doc filtering, not a filesystem
 sandbox (non-doc paths, `Edit`, `cd docs && cat x` bypass it).
 
+The gate credits **[ask-jev](https://github.com/v3moreno/ask-jev)** calls the
+same as laya — `jev_*` MCP tools and `ask-jev relevant|triage` open the doc
+gate, so jev is a drop-in remote decision layer wherever this is installed.
+
 Verified live invocation (not just registration): `claude -p`, `codex exec`,
 `hermes chat --oneshot`, `opencode run` all called laya tools and returned
 real daemon decisions; pi's calls are proven across the model matrix.
