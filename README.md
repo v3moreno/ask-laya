@@ -58,3 +58,27 @@ Findings:
   would enforce it harder than doc rules.
 - Laya decisions cost ~0.1–1 s on CPU — invisible vs the LLM's think/generate
   time; the win is tokens not burned on reading/filtering docs.
+
+## Baseline — pi + Qwen3.5-2B-exl3-6hb-6bpw (plugin gateway, laya on GPU)
+
+Same suite, MTP drafting on, laya daemon in GPU mode (~20 ms/decision):
+
+| Test | Wall | Tokens in/out | Used `ask`? | Correct? |
+|---|---:|---:|:---:|:---:|
+| filter docs | 14 s | 4001/454 | no | yes |
+| summarize ISP email | 6 s | 2248/484 | no | yes |
+| draft reply | 10 s | 2480/588 | no | yes |
+| flight lookup | 16 s | 3884/631 | no | no — never opened flight.txt |
+| triage all docs | 2 s | 561/50 | no | no — degenerate output |
+| no-doc QA | 1 s | 151/19 | no | yes |
+
+Findings:
+
+- **The 2B ignores prompt-level rules entirely** (0/6 `ask` calls) — it
+  wanders the filesystem with ls/find/cat and once searched pi's own install
+  docs for "flight". Prompt-skill enforcement needs a 4B-class model minimum;
+  for the 2B, enforcement must be tool-level (a pi extension).
+- Quality is task-dependent: fine for direct QA/summaries, unreliable as an
+  agent (2/6 tasks failed outright).
+- Per-task wall time is comparable to the 4B because failures waste calls;
+  when it does the right thing it's quick (6 s summarize, 1 s QA).
