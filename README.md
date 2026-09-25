@@ -77,7 +77,9 @@ real file — an empty glob no longer unlocks the gate, and `laya_route` /
 `laya_yesno` don't authorize document reads on their own.
 
 <details>
-<summary>4B + laya-CPU, prompt skill — per-test</summary>
+<summary>4B + laya-CPU — prompt skill vs extension v2, per-test</summary>
+
+Prompt skill (AGENTS.md + `ask` CLI):
 
 | Test | Wall | Tokens in/out | Used `ask`? | Correct? |
 |---|---:|---:|:---:|:---:|
@@ -91,8 +93,8 @@ real file — an empty glob no longer unlocks the gate, and `laya_route` /
 Skips `ask` on tasks it judges as direct generation or trivial reading —
 soft enforcement, but quality is flawless.
 
-With the extension instead of prompt rules — every doc task ran
-`laya_filter`/`laya_triage` first, then read only the kept file:
+Extension v2 — every doc task ran `laya_filter`/`laya_triage` first, then
+read only the kept file:
 
 | Test | Wall | Tokens in/out | Laya calls | Correct? |
 |---|---:|---:|---:|---|
@@ -158,12 +160,13 @@ then read only `flight.txt`. Still not daily-reliable — it once tried to
   pi's schema, the 2B used them unprompted — no prompt convincing needed.
 - **Blocking works, but small models read `BLOCKED` as refusal.** Embedding
   a pre-run triage + the concrete next call turns the block into a redirect.
-- **The win is tokens.** Flight lookup on 2B: 3884 → 703 input tokens because
-  the model filters before reading instead of cat'ing everything.
-- **Recommended stack:** Qwen3.5-2B (62.8 T/s, 128K ctx) + pi extension +
-  laya-GPU — ~2 s agent tasks with enforced decisions. Use the 4B when
-  answer quality matters more than enforcement rigor; the 0.8B only for
-  trivial tasks.
+- **The win is tokens and reliability.** The 2B's best skill-run attempt at
+  flight lookup burned 3884 input tokens wandering; with the extension it
+  filters before reading — and can't read a doc before laya scores it.
+- **Recommended stacks:** **4B + extension + laya-CPU** for max quality with
+  full enforcement (6/6, no GPU co-location constraint), or
+  **2B + extension + laya-GPU** for fastest agent tasks (~2–5 s, 5.5 GB
+  co-resident at 128K ctx). The 0.8B only for trivial tasks.
 
 ## Reproduce
 
