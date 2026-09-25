@@ -22,6 +22,7 @@ discovery/auth.
 | `SKILL.md` | Prompt-level rules: the agent must call `ask` for every decision | Agents that load skills; works on 4B-class models |
 | `bin/ask` | Zero-dependency CLI for the daemon (`/v1/systemone`) | Agents via bash, humans, scripts |
 | `pi-extension/laya.js` | Registers `laya_*` tools + blocks doc reads until laya runs | **pi agent — required for 2B-class and below** |
+| `local-laya/laya-mcp.py` | stdio MCP server proxying to the daemon | **every other agent — one config covers all** |
 | `smoke/` | Test workspace + `run.sh` suite over 5 sample docs | Reproduce the benchmarks |
 
 ## ask CLI
@@ -38,6 +39,30 @@ $BIN predict "state" '<questions-json>'  # raw call, full answers
 
 To apply prompt-level enforcement: put `AGENTS.md` like `smoke/AGENTS.md` in
 the working dir (or point your agent's skill mechanism at `SKILL.md`).
+
+## Every agent
+
+`local-laya/laya-mcp.py` is a stdio MCP server that proxies these tools to the
+daemon — one implementation for every MCP-capable agent. `local-laya/laya-mcp-install`
+registers it:
+
+| Agent | Mechanism | Enforcement level |
+|---|---|---|
+| pi, omp | native extension (`pi-extension/laya.js`) | **hard** — blocking `tool_call` hooks + injection guard |
+| claude, codex, opencode, crush, grok, copilot, hermes | MCP → daemon | soft — tools in schema, no read-blocking |
+
+MCP gives every agent the same seven tools (`laya_route`, `laya_filter`,
+`laya_triage`, `laya_yesno`, `laya_pick`, `laya_decide`, `laya_status`). Only
+pi/omp's native extension can *block* reads until laya runs — MCP can't hook
+another tool's call. For MCP agents that matters less than you'd think: the
+smoke results below show tool-schema presence alone got 6/6 usage on the 2B.
+
+Verified registration: `claude mcp list` connected, `codex mcp list` enabled,
+`opencode mcp list` connected (merges with the plugin's env config),
+`hermes mcp list` 7/7 tools, grok writes `[mcp_servers.laya]`; crush + grok
+configs are regenerated per `open` by the plugin — the
+[v3moreno/omarchy-local-ai](https://github.com/v3moreno/omarchy-local-ai) fork
+injects laya there (`LAYA_MCP=off` disables).
 
 ## pi extension — laya as automatic infrastructure
 
