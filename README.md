@@ -137,17 +137,24 @@ Findings:
 
 ## pi extension — Qwen3.5-0.8B-exl3-6bpw (plugin gateway, laya on GPU)
 
-Same suite, extension active:
+The 0.8B was hardened against with three extension tweaks: `files` param is
+optional (defaults to `docs/*` — the model fumbles arrays), unreadable paths
+return per-file errors instead of throwing, a `laya_truth` alias absorbs the
+model's favourite hallucinated tool name, and a **blocked doc read embeds a
+pre-run `laya_triage(docs/*)` result** in the block reason — the block becomes
+a redirect with data instead of a dead end.
 
-| Test | Wall | Tokens in/out | Laya calls | Correct? |
-|---|---:|---:|---:|---|
-| filter docs | 9 s | 4210/398 | `laya_truth` (hallucinated) | partial — found doc via grep |
-| summarize ISP email | 1 s | 246/66 | none | no — invented path, gave up |
-| draft reply | 8 s | 524/153 | route | no — read `/net/rhomelia/requirements.txt` |
-| flight lookup | 1 s | 359/109 | none | no — never found flight.txt |
-| triage all docs | 2 s | 543/166 | triage ×2 (junk args) | yes |
-| no-doc QA | 1 s | 77/8 | none | no — "Pluto is a planet" |
+| Mode | Laya used | Correct | Notes |
+|---|---:|---:|---|
+| AGENTS.md skill | 0/6 | 1/6 | wandered `~/.config` 231 s on flight lookup |
+| extension v1 | 3/6 (broken args) | 2/6 | `laya_truth` hallucination, junk array args |
+| extension v2 (smart block) | 4/6 | 3/6 | blocked reads now carry triage + next-step hint |
 
-Verdict: **0.8B is below the usable floor.** Tool registration can't fix a
-model that hallucinates tool names, invents paths, and fails basic QA — 2/6
-correct even with enforcement. Use the 2B (extension) or 4B (either mode).
+Smart-block recovery observed: a hallucinated `docs/formats.md` read was
+blocked, the model read the embedded triage, called `laya_filter` itself,
+then read only `flight.txt` — the full intended pipeline executed by a 0.8B.
+
+Verdict: still below a reliable daily floor (comprehension errors remain —
+it once tried to *edit* the email it was summarizing), but the smart block
+moved it from catastrophic wandering to a usable-if-supervised agent. The
+2B + extension remains the recommendation; 0.8B only where tasks are trivial.

@@ -83,6 +83,8 @@ const text = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj) }],
 const readFile = (f) => readFileSync(f, "utf8").slice(0, 4000);
 // expand a single * glob against the containing directory; plain paths pass through
 function expand(paths) {
+	if (!paths || paths.length === 0) paths = ["docs/*"];
+	if (typeof paths === "string") paths = [paths];
 	const out = [];
 	for (const p of paths) {
 		if (!String(p).includes("*")) { out.push(p); continue; }
@@ -93,6 +95,7 @@ function expand(paths) {
 	return out;
 }
 const isDoc = (p) => /(^|\/|\\)docs?\/[^\/\\]*\.(txt|md|eml)$/i.test(String(p || ""));
+const tryRead = (f) => { try { return readFile(f); } catch (e) { return `__ERR__ ${e.message}`; } };
 
 export default function (pi) {
 	pi.registerTool({
@@ -108,17 +111,19 @@ export default function (pi) {
 		label: "Laya Filter",
 		description: "MANDATORY before reading documents: score each file's relevance to a question (0-1). Only read files scoring >= 0.5.",
 		parameters: {
-			type: "object", required: ["question", "files"],
+			type: "object", required: ["question"],
 			properties: {
 				question: { type: "string" },
-				files: { type: "array", items: { type: "string" }, description: "paths to score" },
+				files: { type: "array", items: { type: "string" }, description: "paths or glob; omit to score all docs/*" },
 			},
 		},
 		async execute(_id, params) {
 			layaUsed = true;
 			const out = [];
 			for (const f of expand(params.files)) {
-				const r = await predict(readFile(f), { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${params.question}?` } });
+				const body = tryRead(f);
+				if (body.startsWith("__ERR__")) { out.push({ file: f, error: body.slice(8) }); continue; }
+				const r = await predict(body, { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${params.question}?` } });
 				out.push({ file: f, relevant: slim(r).relevant });
 			}
 			return text(out);
@@ -128,12 +133,16 @@ export default function (pi) {
 	pi.registerTool({
 		name: "laya_triage",
 		label: "Laya Triage",
-		description: "MANDATORY when asked to classify or triage documents: returns the message kind of each file (invoice_or_billing, personal, booking_or_itinerary, notice, work, other). Accepts globs like docs/*.txt. Never classify documents yourself.",
-		parameters: { type: "object", required: ["files"], properties: { files: { type: "array", items: { type: "string" }, description: "paths or globs, e.g. docs/*.txt" } } },
+		description: "MANDATORY when asked to classify or triage documents: returns the message kind of each file (invoice_or_billing, personal, booking_or_itinerary, notice, work, other). Call with files=[] or a glob like docs/*.txt — omit files to triage all docs/*. Never classify documents yourself.",
+		parameters: { type: "object", properties: { files: { type: "array", items: { type: "string" }, description: "paths or glob; omit to triage all docs/*" } } },
 		async execute(_id, params) {
 			layaUsed = true;
 			const out = [];
-			for (const f of expand(params.files)) out.push({ file: f, kind: slim(await predict(readFile(f), TRIAGE_Q)).kind });
+			for (const f of expand(params.files)) {
+				const body = tryRead(f);
+				if (body.startsWith("__ERR__")) { out.push({ file: f, error: body.slice(8) }); continue; }
+				out.push({ file: f, kind: slim(await predict(body, TRIAGE_Q)).kind });
+			}
 			return text(out);
 		},
 	});
@@ -149,6 +158,26 @@ export default function (pi) {
 		async execute(_id, params) { layaUsed = true; return text(slim(await predict(params.state, { answer: { type: "noul", instructions: params.instruction } }))); },
 	});
 
+	// Small models hallucinate laya_truth — keep it as a working alias of filter.
+	pi.registerTool({
+		name: "laya_truth",
+		label: "Laya Truth",
+		description: "Score whether each doc helps answer the question. Equivalent to laya_filter; question may be named 'text'.",
+		parameters: { type: "object", properties: { text: { type: "string" }, question: { type: "string" }, files: { type: "array", items: { type: "string" } } } },
+		async execute(_id, params) {
+			layaUsed = true;
+			const q = params.question || params.text || "relevant documents";
+			const out = [];
+			for (const f of expand(params.files)) {
+				const body = tryRead(f);
+				if (body.startsWith("__ERR__")) { out.push({ file: f, error: body.slice(8) }); continue; }
+				const r = await predict(body, { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${q}?` } });
+				out.push({ file: f, relevant: slim(r).relevant });
+			}
+			return text(out);
+		},
+	});
+
 	// Hard enforcement: no reading or shell-printing of docs until a laya tool ran.
 	pi.on("tool_call", async (event) => {
 		if (event.toolName.startsWith("laya_")) { layaUsed = true; return undefined; }
@@ -158,7 +187,18 @@ export default function (pi) {
 			(event.toolName === "read" && isDoc(p.path)) ||
 			(event.toolName === "bash" && /\b(cat|less|head|tail|bat)\b[^\n]*\bdocs?\//.test(String(p.command || "")));
 		if (docRead) {
-			return { block: true, reason: "Laya decides first: call laya_filter or laya_triage to decide which documents matter, then read only the ones it keeps." };
+			let hint = "";
+			try {
+				const tri = [];
+				for (const f of expand(["docs/*"])) {
+					const body = tryRead(f);
+					if (body.startsWith("__ERR__")) continue;
+					tri.push({ file: f, kind: slim(await predict(body, TRIAGE_Q)).kind });
+				}
+				if (tri.length) hint = ` laya_triage(docs/*) already ran for you: ${JSON.stringify(tri)}.`;
+			} catch {}
+			layaUsed = true;
+			return { block: true, reason: `BLOCKED.${hint} Now call laya_filter with {"question": "<the user's question>"} to pick which file holds the answer, then read only that file.` };
 		}
 		return undefined;
 	});
