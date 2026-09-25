@@ -57,12 +57,16 @@ pi/omp's native extension can *block* reads until laya runs — MCP can't hook
 another tool's call. For MCP agents that matters less than you'd think: the
 smoke results below show tool-schema presence alone got 6/6 usage on the 2B.
 
-Verified registration: `claude mcp list` connected, `codex mcp list` enabled,
-`opencode mcp list` connected (merges with the plugin's env config),
-`hermes mcp list` 7/7 tools, grok writes `[mcp_servers.laya]`; crush + grok
+Verified **live invocation** (not just registration): `claude -p`,
+`codex exec`, `hermes chat --oneshot` and `opencode run` all called
+`laya_route` and returned real daemon decisions; pi's extension calls are
+proven across the whole benchmark matrix below. Registration also confirmed
+for grok (`[mcp_servers.laya]`) and copilot (`mcp-config.json`). crush + grok
 configs are regenerated per `open` by the plugin — the
 [v3moreno/omarchy-local-ai](https://github.com/v3moreno/omarchy-local-ai) fork
-injects laya there (`LAYA_MCP=off` disables).
+injects laya there (`LAYA_MCP=off` disables). Note: `codex exec` headless
+needs `--dangerously-bypass-approvals-and-sandbox` (or an approval) for MCP
+calls.
 
 ## pi extension — laya as automatic infrastructure
 
