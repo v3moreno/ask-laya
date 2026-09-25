@@ -59,14 +59,29 @@ smoke results below show tool-schema presence alone got 6/6 usage on the 2B.
 
 Verified **live invocation** (not just registration): `claude -p`,
 `codex exec`, `hermes chat --oneshot` and `opencode run` all called
-`laya_route` and returned real daemon decisions; pi's extension calls are
-proven across the whole benchmark matrix below. Registration also confirmed
-for grok (`[mcp_servers.laya]`) and copilot (`mcp-config.json`). crush + grok
+laya tools and returned real daemon decisions; pi's extension calls are
+proven across the whole benchmark matrix below. crush + grok
 configs are regenerated per `open` by the plugin — the
 [v3moreno/omarchy-local-ai](https://github.com/v3moreno/omarchy-local-ai) fork
 injects laya there (`LAYA_MCP=off` disables). Note: `codex exec` headless
 needs `--dangerously-bypass-approvals-and-sandbox` (or an approval) for MCP
 calls.
+
+### 6-test smoke suite, all agents
+
+Same prompts as the model matrix, run in `smoke/` (AGENTS.md rules active):
+
+| Agent | Backend | Laya used | Correct | Enforcement seen |
+|---|---|---:|---:|---|
+| claude | remote | 5/6 | 6/6 | Read denied → laya ran → allowed; `ask` CLI preferred over MCP tools |
+| codex | remote | 6/6 | 6/6 | `ask` CLI + MCP calls; audit line every test |
+| hermes | remote | 6/6 | 6/6 | `ask relevant`/`triage`/`yesno`; reported `laya:` audit lines |
+| opencode | local 4B | 4/6 | 4/6 | t1 filter+read correct; t3/t4 refused without attempting (4B gap, not a gate failure) |
+
+Remote-capable models hit 6/6 regardless of whether they pick the `ask` CLI or
+MCP tools — both count since the gate credits `ask` too. The 4B's t3/t4 misses
+were "I don't have access" refusals (comprehension), same class of failure pi
+showed.
 
 ## pi extension — laya as automatic infrastructure
 
