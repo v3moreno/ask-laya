@@ -11,8 +11,12 @@ const NAME = { read: "Read", bash: "Bash", grep: "Grep", glob: "Glob" }
 
 function translate(tool) {
   if (NAME[tool]) return NAME[tool]
-  const m = tool.match(/^(?:mcp__)?laya[_:](laya_\w+|status|route|filter|triage|yesno|pick|decide|truth)$/i)
-  if (m) return "mcp__laya__" + (m[1].startsWith("laya_") ? m[1] : "laya_" + m[1])
+  // opencode names MCP tools <server>_<tool>, e.g. laya_laya_filter / jev_jev_filter
+  const m = tool.match(/^(?:mcp__)?(laya|jev)[_:](\w+)$/i)
+  if (m) {
+    const srv = m[1].toLowerCase()
+    return `mcp__${srv}__` + (m[2].startsWith(srv + "_") ? m[2] : srv + "_" + m[2])
+  }
   return tool
 }
 
