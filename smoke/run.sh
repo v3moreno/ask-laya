@@ -31,14 +31,16 @@ answer = ""
 for line in open(f):
     try: e = json.loads(line)
     except: continue
-    if e.get("type") == "tool_execution_start" and e.get("toolName") == "bash":
-        cmds.append(e.get("args", {}).get("command", ""))
+    if e.get("type") == "tool_execution_start":
+        name = e.get("toolName", "")
+        arg = e.get("args", {})
+        cmds.append(name + " " + str(arg.get("command") or arg.get("path") or arg.get("files") or "")[:120])
     if e.get("type") == "message_end":
         u = (e.get("message") or {}).get("usage") or {}
         inp += u.get("input", 0); out += u.get("output", 0)
         for c in e.get("message", {}).get("content", []):
             if c.get("type") == "text": answer = c["text"][-150:]
-asks = [c for c in cmds if "ask" in c.split()[0].split("/")[-1] or "bin/ask" in c]
+asks = [c for c in cmds if "laya_" in c or "bin/ask" in c or (c.split()[0].split("/")[-1] == "ask")]
 print("%-14s %6ds %6d %6d %6d  %s" % (sys.argv[1].split("-smoke-")[-1][:14], wall, inp, out, len(asks),
       "yes" if asks else "NO"), file=sys.stderr)
 open(f + ".cmds", "w").write("\n".join(cmds))

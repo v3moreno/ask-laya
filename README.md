@@ -14,6 +14,9 @@ Built and tested on a 6 GB RTX 4050 Laptop against the
 - `SKILL.md` — the skill document: rules that require the agent to call `ask`
   for every decision-type question.
 - `bin/ask` — zero-dependency CLI for the Laya daemon (`/v1/systemone`).
+- `pi-extension/laya.js` — pi agent extension: registers `laya_route`,
+  `laya_filter`, `laya_triage`, `laya_yesno` as real tools, and blocks direct
+  `read`/`cat` of `docs/*.txt` until a laya tool has run.
 - `smoke/` — test workspace (`AGENTS.md` applies the skill; `run.sh` reruns
   the suite) plus `docs/` sample emails.
 
@@ -35,6 +38,23 @@ Daemon: [local-laya](https://github.com/v3moreno/local-laya) —
 
 To make an agent follow it: put `AGENTS.md` like `smoke/AGENTS.md` in the
 working dir (or use your agent's skill mechanism pointing at `SKILL.md`).
+
+## pi extension — tool-level enforcement
+
+Prompt rules (AGENTS.md/SKILL.md) work on 4B-class models but are ignored by
+2B-class models (0/6 compliance). The pi extension puts laya in the tool
+schema instead — compliance becomes immediate, and a `tool_call` hook blocks
+document reads until laya has run. Install:
+
+```bash
+cp pi-extension/laya.js "$PI_CODING_AGENT_DIR/extensions/laya.js"
+# or project-level (requires trusting the project):
+mkdir -p .pi/extensions && cp pi-extension/laya.js .pi/extensions/
+```
+
+`laya_route` / `laya_filter` / `laya_triage` / `laya_yesno` then appear in
+pi's tool list; `files` params accept globs like `docs/*.txt`. Same daemon
+discovery as `bin/ask` (GPU :8124 → CPU :8123, `LAYA_URL`/`LAYA_API_KEY`).
 
 ## Baseline — pi + Qwen3.5-4B-exl3-6hb-6bpw (plugin gateway, laya on CPU)
 
@@ -82,3 +102,35 @@ Findings:
   agent (2/6 tasks failed outright).
 - Per-task wall time is comparable to the 4B because failures waste calls;
   when it does the right thing it's quick (6 s summarize, 1 s QA).
+
+## pi extension results — same 2B, laya as registered tools
+
+Same model, same daemon (GPU), same prompts — only `pi-extension/laya.js`
+added:
+
+| Test | Wall | Tokens in/out | Laya calls | Correct? |
+|---|---:|---:|---:|---|
+| filter docs | 3 s | 774/228 | filter + triage | yes (isp-billing.txt) |
+| summarize ISP email | 2 s | 405/109 | triage | no — hallucinated a doc path |
+| draft reply | 3 s | 691/173 | filter | yes |
+| flight lookup | 2 s | 703/177 | filter → read flight.txt only | yes (dates + ref) |
+| triage all docs | 2 s | 304/95 | triage (one glob call) | yes |
+| no-doc QA | 0 s | 77/9 | none (not needed) | yes |
+
+Same-model comparison:
+
+| | AGENTS.md skill | pi extension |
+|---|---:|---:|
+| laya used | 0/6 | 5/6 |
+| correct | 4/6 | 5/6 |
+| flight lookup | 16 s, 3884 in-tokens | 2 s, 703 in-tokens |
+| triage | 12 s wandering | 2 s, one call |
+
+Findings:
+
+- Tool registration *is* enforcement: the 2B called laya on its own the first
+  time a decision came up. The doc-read block was never even needed.
+- Wall time dropped 3–8× and input tokens dropped ~80% on doc tasks — the
+  model filters before reading instead of cat'ing everything.
+- Remaining failure mode is comprehension, not enforcement: on summarize it
+  invented `smtp.insta.com/*` as a path instead of listing the docs dir.
