@@ -76,12 +76,13 @@ Same prompts as the model matrix, run in `smoke/` (AGENTS.md rules active):
 | claude | remote | 5/6 | 6/6 | Read denied → laya ran → allowed; `ask` CLI preferred over MCP tools |
 | codex | remote | 6/6 | 6/6 | `ask` CLI + MCP calls; audit line every test |
 | hermes | remote | 6/6 | 6/6 | `ask relevant`/`triage`/`yesno`; reported `laya:` audit lines |
-| opencode | local 4B | 4/6 | 4/6 | t1 filter+read correct; t3/t4 refused without attempting (4B gap, not a gate failure) |
+| opencode | remote (gpt-6-luna) | 6/6 | 6/6 | filter/route/yesno via MCP tools |
+| opencode | local 4B | 4/6 | 4/6 | t3/t4 refused without attempting — fixed by the plugin's per-prompt route advisory |
 
-Remote-capable models hit 6/6 regardless of whether they pick the `ask` CLI or
-MCP tools — both count since the gate credits `ask` too. The 4B's t3/t4 misses
-were "I don't have access" refusals (comprehension), same class of failure pi
-showed.
+The advisory hook (`experimental.chat.messages.transform` in
+`opencode-plugin/laya.js`) injects `[laya route] …` plus a directive
+"check tools before refusing" into every user turn — the same mechanism that
+fixed pi's small-model wanderings.
 
 ## pi extension — laya as automatic infrastructure
 
