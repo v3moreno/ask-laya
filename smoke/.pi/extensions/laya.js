@@ -95,15 +95,6 @@ let layaUsed = false; // becomes true only after a doc-scoring call scored >=1 r
 const cache = new Map();
 let cachedUrl = null;
 
-function slim(result) {
-	const out = {};
-	for (const [qid, a] of Object.entries(result?.answers || {})) {
-		const v = a?.choice ?? a?.score ?? a?.noul ?? a;
-		out[qid] = typeof v === "number" ? Math.round(v * 1e4) / 1e4 : v;
-	}
-	return out;
-}
-
 const text = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj) }], details: undefined });
 const readFile = (f) => readFileSync(f, "utf8").slice(0, 4000);
 const tryRead = (f) => { try { return readFile(f); } catch (e) { return `__ERR__ ${e.message}`; } };
@@ -128,29 +119,68 @@ const isDoc = (p) => /(^|\/|\\)docs?\/[^\/\\]*\.(txt|md|eml)$/i.test(String(p ||
 // contain an injected instruction
 const SUSPICIOUS = /ignore\s+(all|previous|prior|your)|system\s*prompt|instructions?|assistant|agent|tool_call|run\s+this|execute/i;
 
-async function predict(state, questions) {
-	const key = createHash("sha1").update(String(state)).update("\0").update(JSON.stringify(questions)).digest("hex");
-	if (cache.has(key)) return cache.get(key);
+function slim(result) {
+	const out = {};
+	for (const [qid, a] of Object.entries(result?.answers || {})) {
+		const v = a?.choice ?? a?.score ?? a?.noul ?? a;
+		out[qid] = typeof v === "number" ? Math.round(v * 1e4) / 1e4 : v;
+	}
+	return out;
+}
+
+function cacheKey(state, questions) {
+	return createHash("sha1").update(String(state)).update("\0").update(JSON.stringify(questions)).digest("hex");
+}
+
+async function post(base, path, body) {
 	const headers = { "Content-Type": "application/json" };
 	if (process.env.LAYA_API_KEY) headers.Authorization = `Bearer ${process.env.LAYA_API_KEY}`;
-	const urls = cachedUrl ? [cachedUrl, ...URLS.filter((u) => u !== cachedUrl)] : URLS;
+	const r = await fetch(`${base}${path}`, {
+		method: "POST", headers, body: JSON.stringify(body),
+		signal: AbortSignal.timeout(30000),
+	});
+	if (!r.ok) throw new Error(`HTTP ${r.status}`);
+	return r.json();
+}
+
+const urlsOrdered = () => (cachedUrl ? [cachedUrl, ...URLS.filter((u) => u !== cachedUrl)] : URLS);
+
+async function predict(state, questions) {
+	const key = cacheKey(state, questions);
+	if (cache.has(key)) return cache.get(key);
 	let lastErr;
-	for (const base of urls) {
+	for (const base of urlsOrdered()) {
 		try {
-			const r = await fetch(`${base}/v1/systemone`, {
-				method: "POST", headers, body: JSON.stringify({ state, questions }),
-				signal: AbortSignal.timeout(15000),
-			});
-			if (r.ok) {
-				cachedUrl = base;
-				const j = await r.json();
-				cache.set(key, j);
-				return j;
-			}
-			lastErr = new Error(`HTTP ${r.status}`);
+			const j = await post(base, "/v1/systemone", { state, questions });
+			cachedUrl = base;
+			cache.set(key, j);
+			return j;
 		} catch (e) { lastErr = e; }
 	}
 	throw lastErr;
+}
+
+// one forward pass for N states — falls back to sequential predicts if the
+// daemon predates /v1/systemone/batch
+async function predictBatch(items) {
+	const fresh = items.filter((it) => !cache.has(cacheKey(it.state, it.questions)));
+	const cached = new Map(items.map((it) => [it, cache.get(cacheKey(it.state, it.questions))]));
+	if (fresh.length) {
+		for (const base of urlsOrdered()) {
+			try {
+				const j = await post(base, "/v1/systemone/batch", {
+					requests: fresh.map((it) => ({ state: it.state, questions: it.questions })),
+				});
+				cachedUrl = base;
+				fresh.forEach((it, i) => { const r = j.results[i]; cache.set(cacheKey(it.state, it.questions), r); cached.set(it, r); });
+				break;
+			} catch { /* try next daemon, then sequential fallback */ }
+		}
+		for (const it of fresh) {
+			if (!cached.get(it)) cached.set(it, await predict(it.state, it.questions));
+		}
+	}
+	return items.map((it) => cached.get(it));
 }
 
 export default function (pi) {
@@ -166,13 +196,18 @@ export default function (pi) {
 
 	const filterExec = async (params) => {
 		const q = params.question || params.text || "relevant documents";
-		const out = [];
-		for (const f of expand(params.files)) {
-			const body = tryRead(f);
-			if (body.startsWith("__ERR__")) { out.push({ file: f, error: body.slice(8) }); continue; }
-			const r = await predict(body, { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${q}?` } });
-			out.push({ file: f, relevant: slim(r).relevant });
-		}
+		const files = expand(params.files);
+		const items = files.map((f) => ({ f, body: tryRead(f) }));
+		const good = items.filter((it) => !it.body.startsWith("__ERR__"));
+		const results = await predictBatch(good.map((it) => ({
+			state: it.body,
+			questions: { relevant: { type: "noul", instructions: `Does this text contain information that helps answer: ${q}?` } },
+		})));
+		const byFile = new Map(good.map((it, i) => [it.f, results[i]]));
+		const out = files.map((f) => {
+			const r = byFile.get(f);
+			return r ? { file: f, relevant: slim(r).relevant } : { file: f, error: items.find((i) => i.f === f)?.body.slice(8) };
+		});
 		if (out.some((x) => !x.error)) layaUsed = true;
 		out.sort((a, b) => (b.relevant ?? 0) - (a.relevant ?? 0));
 		return text({ ranked: out, read: out.filter((x) => (x.relevant ?? 0) >= 0.5).map((x) => x.file) });
@@ -207,12 +242,15 @@ export default function (pi) {
 		description: "MANDATORY when asked to classify or triage documents: per file returns kind, urgency (0-1), needs_reply, is_spam. Omit files to triage all docs/*. Never classify documents yourself.",
 		parameters: { type: "object", properties: { files: { type: "array", items: { type: "string" }, description: "paths or glob; omit to triage all docs/*" } } },
 		async execute(_id, params) {
-			const out = [];
-			for (const f of expand(params.files)) {
-				const body = tryRead(f);
-				if (body.startsWith("__ERR__")) { out.push({ file: f, error: body.slice(8) }); continue; }
-				out.push({ file: f, ...slim(await predict(body, TRIAGE_Q)) });
-			}
+			const files = expand(params.files);
+			const items = files.map((f) => ({ f, body: tryRead(f) }));
+			const good = items.filter((it) => !it.body.startsWith("__ERR__"));
+			const results = await predictBatch(good.map((it) => ({ state: it.body, questions: TRIAGE_Q })));
+			const byFile = new Map(good.map((it, i) => [it.f, results[i]]));
+			const out = files.map((f) => {
+				const r = byFile.get(f);
+				return r ? { file: f, ...slim(r) } : { file: f, error: items.find((i) => i.f === f)?.body.slice(8) };
+			});
 			if (out.some((x) => !x.error)) layaUsed = true;
 			return text(out);
 		},
@@ -318,12 +356,9 @@ export default function (pi) {
 			let hint = "";
 			let scored = 0;
 			try {
-				const tri = [];
-				for (const f of expand(["docs/*"])) {
-					const body = tryRead(f);
-					if (body.startsWith("__ERR__")) continue;
-					tri.push({ file: f, ...slim(await predict(body, { kind: TRIAGE_Q.kind })) });
-				}
+				const docs = expand(["docs/*"]).map((f) => ({ f, body: tryRead(f) })).filter((d) => !d.body.startsWith("__ERR__"));
+				const results = await predictBatch(docs.map((d) => ({ state: d.body, questions: { kind: TRIAGE_Q.kind } })));
+				const tri = docs.map((d, i) => ({ file: d.f, kind: slim(results[i]).kind }));
 				scored = tri.length;
 				if (tri.length) hint = ` laya_triage(docs/*) already ran for you: ${JSON.stringify(tri)}.`;
 			} catch {}
