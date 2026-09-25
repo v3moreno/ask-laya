@@ -134,3 +134,20 @@ Findings:
   model filters before reading instead of cat'ing everything.
 - Remaining failure mode is comprehension, not enforcement: on summarize it
   invented `smtp.insta.com/*` as a path instead of listing the docs dir.
+
+## pi extension — Qwen3.5-0.8B-exl3-6bpw (plugin gateway, laya on GPU)
+
+Same suite, extension active:
+
+| Test | Wall | Tokens in/out | Laya calls | Correct? |
+|---|---:|---:|---:|---|
+| filter docs | 9 s | 4210/398 | `laya_truth` (hallucinated) | partial — found doc via grep |
+| summarize ISP email | 1 s | 246/66 | none | no — invented path, gave up |
+| draft reply | 8 s | 524/153 | route | no — read `/net/rhomelia/requirements.txt` |
+| flight lookup | 1 s | 359/109 | none | no — never found flight.txt |
+| triage all docs | 2 s | 543/166 | triage ×2 (junk args) | yes |
+| no-doc QA | 1 s | 77/8 | none | no — "Pluto is a planet" |
+
+Verdict: **0.8B is below the usable floor.** Tool registration can't fix a
+model that hallucinates tool names, invents paths, and fails basic QA — 2/6
+correct even with enforcement. Use the 2B (extension) or 4B (either mode).
