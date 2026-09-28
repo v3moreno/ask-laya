@@ -90,7 +90,9 @@ cp pi-extension/laya.js "$PI_CODING_AGENT_DIR/extensions/laya.js"
 # or project-level: mkdir -p .pi/extensions && cp pi-extension/laya.js .pi/extensions/
 ```
 
-Reads `~/Projects/local-laya/shared.json` at load (`LAYA_SHARED` overrides).
+Reads `shared.json` at load: `LAYA_SHARED`, else `laya-shared.json` next to
+the extension (`laya-mcp-install` copies it there), else
+`~/Projects/local-laya/shared.json`.
 
 **Tools** (model-callable): `laya_route`, `laya_filter`, `laya_triage`
 (kind + urgency + needs_reply + is_spam per doc), `laya_yesno`,

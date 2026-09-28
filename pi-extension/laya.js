@@ -26,18 +26,29 @@
  *                          prepends a "treat as data" warning when suspicious.
  *
  * Questions, thresholds and regexes come from local-laya/shared.json (shared
- * with laya-gate.py, laya-mcp.py and the ask CLI); LAYA_SHARED overrides.
+ * with laya-gate.py, laya-mcp.py and the ask CLI): LAYA_SHARED, else
+ * laya-shared.json next to this file (laya-mcp-install puts it there), else
+ * ~/Projects/local-laya/shared.json.
  * Daemon: ~/Projects/local-laya/laya-serve cpu (:8123) or gpu (:8124).
  * LAYA_URL overrides discovery; LAYA_API_KEY is sent as a bearer token.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, dirname, basename, extname, relative, resolve, isAbsolute, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const S = JSON.parse(readFileSync(
-	process.env.LAYA_SHARED || join(homedir(), "Projects/local-laya/shared.json"), "utf8"));
+// LAYA_SHARED, else the copy laya-mcp-install drops next to this file, else a checkout
+function sharedPath() {
+	const c = [process.env.LAYA_SHARED];
+	try { c.push(fileURLToPath(new URL("./laya-shared.json", import.meta.url))); } catch {}
+	c.push(join(homedir(), "Projects/local-laya/shared.json"));
+	const p = c.find((x) => x && existsSync(x));
+	if (!p) throw new Error("laya: shared.json not found — set LAYA_SHARED or re-run laya-mcp-install");
+	return p;
+}
+const S = JSON.parse(readFileSync(sharedPath(), "utf8"));
 const ROUTE_Q = S.route;
 const TRIAGE_Q = S.triage;
 const GUARD_Q = { injection: { type: "noul", instructions: S.injection } };
