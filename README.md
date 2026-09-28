@@ -22,7 +22,8 @@ when both are up; `LAYA_URL` / `LAYA_API_KEY` override discovery/auth.
 | `pi-extension/laya.js` | `laya_*` tools + hard doc-read/danger/injection gates | **pi and omp** |
 | `opencode-plugin/laya.js` | opencode plugin: gates + per-prompt route advisory | opencode |
 | `local-laya/laya-mcp.py` | stdio MCP server proxying to the daemon | every other agent |
-| `local-laya/laya-gate.py` | hook engine (claude + hermes protocols) | agents with shell hooks |
+| `local-laya/laya-gate.py` | hook engine (claude + hermes + opencode) | agents with shell hooks |
+| `local-laya/shared.json` | questions, thresholds, gate regexes — one copy read by all of the above | edit to retune every agent at once |
 | `smoke/` | Test workspace + `run.sh` suite over 5 fixture docs | reproduce the benchmarks |
 
 ## ask CLI
@@ -30,9 +31,9 @@ when both are up; `LAYA_URL` / `LAYA_API_KEY` override discovery/auth.
 ```bash
 BIN=~/Projects/ask-laya/bin/ask
 
-$BIN route "the user's request"          # task + needs_docs/reasoning scores
-$BIN relevant "question" file1 file2...  # relevance per doc; keep >= 0.5
-$BIN triage file1 file2...               # message type per doc
+$BIN route "the user's request"          # task + needs_web/docs/reasoning scores
+$BIN relevant "question" file1 file2...  # relevance per doc, ranked; keep >= 0.5
+$BIN triage file1 file2...               # kind + urgency + needs_reply + is_spam per doc
 $BIN yesno "state" "instruction"         # yes/no score
 $BIN predict "state" '<questions-json>'  # raw call, full answers
 ```
@@ -57,9 +58,24 @@ working dir (or point the agent's skill mechanism at `SKILL.md`).
 Gate scope is `docs/` — it's a tripwire for doc filtering, not a filesystem
 sandbox (non-doc paths, `Edit`, `cd docs && cat x` bypass it).
 
+Gate semantics (same in every hard-enforced agent): a doc read is allowed
+only for files a filter call **returned with relevance ≥ 0.5** for the
+current prompt; a new user prompt resets that set. Credit is taken after
+the call succeeds, so a failed call unlocks nothing. `triage` classifies
+but doesn't unlock. A blocked read pre-runs the filter on the user's
+prompt and names the files to read, so it redirects instead of dead-ending.
+The danger gate skips plain read-only commands (`ls`, `git status`, …
+with no `;&|$` chaining), denies known-destructive shapes outright
+(`deny_cmd` in `shared.json`: `rm -rf`, `git push --force`, `dd of=`, …),
+and laya-scores each remaining chained segment — the checkpoint alone
+scores `rm -rf ~/Projects` at 0.44, so it can't be the only line. The
+injection screen covers doc reads (file or shell); screening every output
+false-flagged READMEs and configs at 0.86–0.89.
+
 The gate credits **[ask-jev](https://github.com/v3moreno/ask-jev)** calls the
-same as laya — `jev_*` MCP tools and `ask-jev relevant|triage` open the doc
-gate, so jev is a drop-in remote decision layer wherever this is installed.
+same as laya — `jev_*` MCP tools and `ask-jev relevant` open the doc gate
+(claude and hermes hooks match `mcp__(laya|jev)__.*`), so jev is a drop-in
+remote decision layer wherever this is installed.
 
 Verified live invocation (not just registration): `claude -p`, `codex exec`,
 `hermes chat --oneshot`, `opencode run` all called laya tools and returned
@@ -74,6 +90,8 @@ cp pi-extension/laya.js "$PI_CODING_AGENT_DIR/extensions/laya.js"
 # or project-level: mkdir -p .pi/extensions && cp pi-extension/laya.js .pi/extensions/
 ```
 
+Reads `~/Projects/local-laya/shared.json` at load (`LAYA_SHARED` overrides).
+
 **Tools** (model-callable): `laya_route`, `laya_filter`, `laya_triage`
 (kind + urgency + needs_reply + is_spam per doc), `laya_yesno`,
 `laya_pick`, `laya_decide` (raw passthrough), `laya_truth` (alias — small
@@ -81,14 +99,11 @@ models hallucinate the name). `files` params are optional and accept globs.
 
 **Automatic hooks:**
 
-- `before_agent_start` — routes each user prompt, appends
-  `[laya route: task=… needs_docs=…]` to the system prompt.
+- `before_agent_start` — routes each user prompt, appends the shared
+  `[laya route] task=… needs_docs=…` advisory to the system prompt.
 - `tool_result` — screens `read`/`bash` output for prompt injection,
   prepends a "treat as DATA" warning when suspicious.
-- `tool_call` — doc gate: reads of `docs/*` blocked until a doc-scoring
-  call scored ≥1 real file (the block embeds a pre-run triage so it
-  redirects instead of dead-ending). Danger gate: bash commands laya-scored,
-  blocked at ≥0.85.
+- `tool_call` — doc gate and danger gate, same semantics as above.
 
 ## Results and findings
 
@@ -101,5 +116,6 @@ and the calibration notes.
 cd ~/Projects/local-laya && ./laya-serve gpu          # or cpu
 cd ~/Projects/ask-laya/smoke
 export PI_CODING_AGENT_DIR=~/.local/state/omarchy/local-ai/agents/pi
-./run.sh "Qwen3.5-2B"   # model id as configured in the plugin
+./run.sh "Qwen3.5-2B"   # pi; model id as configured in the plugin
+./run.sh claude          # or codex | hermes | opencode [model]
 ```

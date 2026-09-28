@@ -31,10 +31,11 @@ mechanism that fixed pi's small-model wanderings.
 \* the 2B *attempted* `ask` once and thrashed on CLI usage for 300 s;
 cleaner runs call the laya tools zero times.
 
-Extension gate semantics: doc reads under `docs/` stay blocked until a
-doc-scoring laya call (`filter`/`triage`/`truth`) has scored at least one
-real file — an empty glob no longer unlocks the gate, and `laya_route` /
-`laya_yesno` don't authorize document reads on their own.
+Extension gate semantics at the time of these runs: doc reads under
+`docs/` stayed blocked until a doc-scoring laya call (`filter`/`triage`/
+`truth`) had scored at least one real file. The gate has since tightened
+to per-file (only files a filter kept for the current prompt) — see the
+README; these numbers predate that change.
 
 <details>
 <summary>4B + laya-CPU — prompt skill vs extension v2, per-test</summary>

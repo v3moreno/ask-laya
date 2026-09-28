@@ -23,9 +23,9 @@ calibrated. `ask` output is the decision; do not second-guess it.
 ```bash
 BIN=~/Projects/ask-laya/bin/ask
 
-$BIN route "the user's request"          # -> {"task": ..., "needs_web": 0.x, "needs_docs": 0.x, "needs_reasoning": 0.x}
-$BIN relevant "question" file1 file2...  # -> [{"file": ..., "relevant": 0.x}, ...] — keep files >= 0.5
-$BIN triage file1 file2...               # -> [{"file": ..., "kind": "..."}, ...] — classifies each doc
+$BIN route "the user's request"          # -> {"task": email|document_search|code|question|action|other, "needs_web": 0.x, "needs_docs": 0.x, "needs_reasoning": 0.x}
+$BIN relevant "question" file1 file2...  # -> [{"file": ..., "relevant": 0.x}, ...] ranked — only files >= 0.5 may be read
+$BIN triage file1 file2...               # -> [{"file": ..., "kind": "...", "urgency": 0.x, "needs_reply": 0.x, "is_spam": 0.x}, ...]
 $BIN yesno "state text" "instruction"    # -> {"answer": 0.x}
 $BIN predict "state" '<questions-json>'  # raw call, full answer objects
 ```
@@ -35,9 +35,10 @@ $BIN predict "state" '<questions-json>'  # raw call, full answer objects
 1. **Route first.** On any multi-step or document-touching request — including
    drafting replies to documents — run `ask route` before planning your answer.
 2. **Filter before reading.** Given several documents/emails, run
-   `ask relevant` first and only read files scoring >= 0.5. Never read them all
-   "to be safe". To say WHAT each document is, use `ask triage` — never
-   classify documents yourself.
+   `ask relevant` first and only read files scoring >= 0.5 — where hooks are
+   installed, other doc reads are blocked. Never read them all "to be safe".
+   To say WHAT each document is, use `ask triage` (it does not unlock reads) —
+   never classify documents yourself.
 3. **Batch.** One `ask predict` call can carry several questions — use one call
    rather than several invocations.
 4. **Trust the numbers.** Do not re-derive a decision in prose to "check" it.
