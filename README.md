@@ -43,7 +43,9 @@ working dir (or point the agent's skill mechanism at `SKILL.md`).
 
 ## Per-agent integration
 
-`local-laya/laya-mcp-install` registers everything below (idempotent):
+`local-laya/laya-mcp-install` registers everything below (idempotent), and
+symlinks `SKILL.md` into every agent's skills dir plus `bin/ask` into
+`~/.local/bin`:
 
 | Agent | Mechanism | Enforcement |
 |---|---|---|
@@ -51,7 +53,9 @@ working dir (or point the agent's skill mechanism at `SKILL.md`).
 | claude | MCP + `~/.claude/settings.json` hooks | hard — doc-read gate, danger gate, injection screen, route advisory |
 | hermes | MCP + `~/.hermes/config.yaml` hooks | hard — same gate, hermes hook protocol |
 | opencode | MCP + `opencode-plugin/laya.js` | hard — `tool.execute.before/after` + prompt advisory |
-| codex, copilot | MCP | soft — tools + server instructions only; no hook surface exists |
+| gemini | MCP + `~/.gemini/settings.json` hooks | hard — BeforeTool/AfterTool gate + BeforeAgent advisory |
+| cursor-agent, Cursor IDE | MCP + `~/.cursor/hooks.json` | hard — `beforeReadFile`/`beforeShellExecution` gate, `postToolUse` credit; no prompt advisory (hook can't inject context) |
+| codex, copilot, windsurf, zed, VS Code | MCP | soft — tools + server instructions only; no hook surface used |
 | crush, grok | MCP via plugin-generated config | soft — omarchy-local-ai fork injects laya on each `open` (`LAYA_MCP=off` disables) |
 
 "Hard" means the host can block another tool's call; MCP alone cannot.
